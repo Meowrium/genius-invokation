@@ -18,8 +18,14 @@ import gts from "@gi-tcg/unplugin-gts/rolldown";
 import solid from "vite-plugin-solid";
 import babel from "@rollup/plugin-babel";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import { mcpBridgePlugin } from "./src/mcpBridgePlugin";
+import { cardImagesPlugin } from "./src/cardImagesPlugin";
+import { uiAssetsPlugin } from "./src/uiAssetsPlugin";
 
 export default defineConfig({
+  server: {
+    port: 3901,
+  },
   esbuild: {
     target: "ES2020",
   },
@@ -29,6 +35,9 @@ export default defineConfig({
     babel({
       babelHelpers: "bundled",
     }),
+    mcpBridgePlugin(),
+    cardImagesPlugin(),
+    uiAssetsPlugin(),
     viteStaticCopy({
       watch: null,
       silent: true,

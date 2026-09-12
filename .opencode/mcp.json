@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "genius-invokation-standalone": {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "tsx",
+        "packages/mcp/standalone-mcp.ts",
+        "--tool-exposure-mode",
+        "direct-action",
+        "--url",
+        "http://localhost:3901"
+      ],
+      "cwd": ".",
+      "env": {
+        "MCP_TOOL_EXPOSURE_MODE": "direct-action"
+      }
+    }
+  }
+}

@@ -33,11 +33,16 @@ import "@gi-tcg/deck-builder/style.css";
 import "@gi-tcg/state-editor/style.css";
 import { DEFAULT_ASSETS_MANAGER } from "@gi-tcg/assets-manager";
 import { GameStateEditor } from "@gi-tcg/state-editor";
+import { ReplayFolderButton, ReplayFolderPage, type ReplayFile } from "./ReplayFolderPanel";
+import { McpModeTab } from "./McpModeTab";
+import { StandaloneParentWithMCP } from "./StandaloneParentWithMCP";
 
 enum GameMode {
   NotStarted = 0,
   Standalone = 1,
   Editor = 2,
+  ReplayFolder = 3,
+  StandaloneWithMCP = 4,
 }
 
 const INIT_DECK0 =
@@ -59,6 +64,12 @@ export function App() {
   const [deck0, setDeck0] = createSignal(INIT_DECK0);
   const [deck1, setDeck1] = createSignal(INIT_DECK1);
   const [version, setVersion] = createSignal<Version>(CURRENT_VERSION);
+  const [replayFiles, setReplayFiles] = createSignal<ReplayFile[]>([]);
+  // MCP mode: each player can be independently "user" or "ai"
+  const [mcpPlayers, setMcpPlayers] = createSignal<["user" | "ai", "user" | "ai"]>([
+    "ai",
+    "user",
+  ]);
 
   const importLog = async () => {
     return new Promise<GameStateLogEntry[]>((resolve, reject) => {
@@ -224,6 +235,12 @@ export function App() {
                 >
                   导入日志
                 </button>
+                <ReplayFolderButton
+                  onPicked={(files) => {
+                    setReplayFiles(files);
+                    setMode(GameMode.ReplayFolder);
+                  }}
+                />
                 <button onClick={() => setMode(GameMode.Editor)}>摆盘器</button>
               </div>
             </div>
@@ -239,6 +256,16 @@ export function App() {
               </a>
             </label>
             <div class="tab__content config-panel" />
+            <McpModeTab
+              onStart={(p0, p1) => {
+                if (p0 === "user" && p1 === "user") {
+                  setMode(GameMode.Standalone);
+                } else {
+                  setMcpPlayers([p0, p1]);
+                  setMode(GameMode.StandaloneWithMCP);
+                }
+              }}
+            />
             <div class="tab__spacer" />
           </div>
           <h3>友情链接</h3>
@@ -300,7 +327,7 @@ export function App() {
               ）
             </li>
             <li>
-              <a href="https://lpsim.zyr17.cn/" target="_blank">
+              <a href="https://7shengzhaohuan.online/lpsim" target="_blank">
                 七圣召唤水皇模拟器 "LPSim"
               </a>
               （
@@ -348,6 +375,26 @@ export function App() {
               返回首页
             </button>
           </GameStateEditor>
+        </Match>
+        <Match when={mode() === GameMode.ReplayFolder}>
+          <ReplayFolderPage
+            files={replayFiles()}
+            onBack={() => {
+              setReplayFiles([]);
+              setMode(GameMode.NotStarted);
+            }}
+          />
+        </Match>
+        <Match when={mode() === GameMode.StandaloneWithMCP}>
+          <StandaloneParentWithMCP
+            logs={logs()}
+            deck0={deck0()}
+            deck1={deck1()}
+            version={version()}
+            enableMCP={true}
+            player0Type={mcpPlayers()[0]}
+            player1Type={mcpPlayers()[1]}
+          />
         </Match>
       </Switch>
       <dialog ref={deckBuilderDialog!} class="deck-builder-dialog">

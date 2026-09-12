@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ESNext",
+      "DOM"],
+    "types": ["node"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "customConditions": ["bun"],
+    // tsup 的 dts 流水线会注入 baseUrl，TS 6 起该选项被弃用（TS5101）——须显式忽略
+    "ignoreDeprecations": "6.0",
+
+    "useDefineForClassFields": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+}

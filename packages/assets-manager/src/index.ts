@@ -29,7 +29,7 @@ export {
   type OverrideData,
 } from "./manager";
 export * from "./constants";
-export { getNameSync } from "./names";
+export { getNameSync, getAllNamesSync } from "./names";
 export type {
   CustomAttachment,
   CustomCharacter,

@@ -6,6 +6,8 @@
 
 # 七圣召唤模拟器
 
+> **本分支（`mcp-v2`）**：在上游基础上叠加了七圣召唤 **MCP 实现**与交互式/无头两种对局模式 —— 见 [MCP.md](./MCP.md)。
+
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/piovium/genius-invokation/main.yml)
 ![NPM Version](https://img.shields.io/npm/v/%40gi-tcg%2Fcore)
 ![PyPI - Version](https://img.shields.io/pypi/v/gitcg)
