@@ -926,7 +926,7 @@ define card {
  * 我方下一次使用技能后：将下一个我方后台角色切换到场上。
  */
 define combatStatus {
-  id 303207 as private WhenTheCraneReturnedInEffect;
+  id 303207 as WhenTheCraneReturnedInEffect;
   since "v3.3.0";
   once useSkill {
     :switchActive($.my.next);
@@ -1177,7 +1177,7 @@ define status {
   once increaseSkillDamage {
     when :( :e.viaSkillType("normal") );
     :e.increaseDamage(1);
-    if (:e.viaChargedAttack()) {
+    if (:isUsingChargedSkill(:e.via)) {
       :e.increaseDamage(1);
     }
   };
@@ -2828,7 +2828,7 @@ define card {
 define status {
   id 301040 as ReforgeTheHolyBladeInEffect;
   on useSkill {
-    when :( :e.isChargedAttack() );
+    when :( :isUsedChargedSkill(:e.skill) );
     const element = :self.master.element() as number as DamageType;
     :damage(element, 5);
   };

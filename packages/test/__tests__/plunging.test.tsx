@@ -13,15 +13,48 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import { ref, setup, State, Card, Support, Character, Equipment, Summon, DeclaredEnd, Status, $ } from "#test";
+import {
+  ref,
+  setup,
+  State,
+  Card,
+  Support,
+  Character,
+  Equipment,
+  Summon,
+  DeclaredEnd,
+  Status,
+  CombatStatus,
+  DiceCount,
+  $,
+} from "#test";
+import { PlungingStatus } from "@gi-tcg/core";
 import { SkillHandle } from "@gi-tcg/core/data";
-import { PlungingStrike } from "@gi-tcg/data/internal/cards/event/other.gts";
-import { WhirlwindThrust, Xiao, YakshasMask } from "@gi-tcg/data/internal/characters/anemo/xiao.gts";
-import { Keqing, YunlaiSwordsmanship } from "@gi-tcg/data/internal/characters/electro/keqing.gts";
-import { AbiogenesisSolarIsotoma, Albedo, DescentOfDivinity, FavoniusBladeworkWeiss, SolarIsotoma } from "@gi-tcg/data/internal/characters/geo/albedo.gts";
+import { WhenTheCraneReturnedInEffect, WindAndFreedomInEffect } from "@gi-tcg/data/internal/cards/event/other.gts";
+import {
+  WhirlwindThrust,
+  Xiao,
+  YakshasMask,
+} from "@gi-tcg/data/internal/characters/anemo/xiao.gts";
+import {
+  Keqing,
+  YunlaiSwordsmanship,
+} from "@gi-tcg/data/internal/characters/electro/keqing.gts";
+import {
+  AbiogenesisSolarIsotoma,
+  Albedo,
+  DescentOfDivinity,
+  FavoniusBladeworkWeiss,
+  SilverIsotoma,
+  SolarIsotoma,
+} from "@gi-tcg/data/internal/characters/geo/albedo.gts";
 import { Mona } from "@gi-tcg/data/internal/characters/hydro/mona.gts";
-import { BiteyShark, Mualani } from "@gi-tcg/data/internal/characters/hydro/mualani.gts";
-import { test } from "vitest";
+import {
+  BiteyShark,
+  Mualani,
+} from "@gi-tcg/data/internal/characters/hydro/mualani.gts";
+import { ExperimentalFieldGenerator, LowGravityBackground } from "@gi-tcg/data/internal/characters/geo/experimental_field_generator.gts";
+import { expect, test } from "vitest";
 
 test("plunging : negative test", async () => {
   const target = ref();
@@ -82,7 +115,34 @@ test("plunging triggered by post-defeated switching", async () => {
   );
   await c.opp.skill(YunlaiSwordsmanship);
   await c.me.chooseActive(xiao);
-  await c.me.skill(WhirlwindThrust)
+  await c.me.skill(WhirlwindThrust);
   // 普攻2，夜叉傩面下落攻击+3
   c.expect(target).toHaveVariable({ health: 5 });
+});
+
+test("switching three times after a plunging attack defers its detection", async () => {
+  const albedo = ref();
+  const oppStandby = ref();
+  const silver = ref();
+  const c = setup(
+    <State>
+      <DeclaredEnd opp />
+      <Character opp active />
+      <Character opp ref={oppStandby} />
+      <Character my ref={albedo} def={Albedo} />
+      <Character my def={ExperimentalFieldGenerator} />
+      <Character my active />
+      {/* 下面三个状态导致三次技能后切人 */}
+      <CombatStatus my def={LowGravityBackground} />
+      <CombatStatus my def={WhenTheCraneReturnedInEffect} />
+      <CombatStatus my def={WindAndFreedomInEffect} />
+      {/* 瑰银切人后响应 */}
+      <CombatStatus my def={SilverIsotoma} ref={silver} />
+    </State>,
+  );
+  await c.me.switch(albedo);
+  await c.me.skill(FavoniusBladeworkWeiss);
+  c.expect($.my.active).toBeDefinition(Albedo);
+  c.expect(oppStandby).toHaveVariable({ health: 10 });
+  c.expect(silver).toHaveVariable({ usage: 2 });
 });
