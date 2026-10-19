@@ -13,15 +13,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import console from "node:console";
 import {
+  usersService,
+  decksService,
+  gamesService,
+  metricsService,
+} from "../services";
+import {
+  NotFoundException,
   BadRequestException,
   ConflictException,
-  Injectable,
   InternalServerErrorException,
-  Logger,
-  NotFoundException,
   UnauthorizedException,
-} from "@nestjs/common";
+} from "../errors";
 import {
   type GameConfig,
   type GameStateLogEntry,
@@ -66,10 +71,7 @@ import {
   takeUntil,
 } from "rxjs";
 import { createGuestId, DeckVerificationError, verifyDeck } from "../utils";
-import {
-  MetricsService,
-  type RoomMetricsSnapshot,
-} from "../metrics/metrics.service";
+import type { RoomMetricsSnapshot } from "../metrics/metrics.service";
 import type {
   CreateRoomDto,
   GuestCreateRoomDto,
@@ -77,13 +79,10 @@ import type {
   PlayerActionResponseDto,
   UserCreateRoomDto,
 } from "./rooms.controller";
-import { DecksService } from "../decks/decks.service";
-import { UsersService } from "../users/users.service";
-import { GamesService } from "../games/games.service";
 import { inspect } from "node:util";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import semver from "semver";
-import { redis } from "../redis";
+import { redisService as redis } from "../services";
 
 const s3 = process.env.S3_ENDPOINT
   ? new S3Client({
@@ -129,7 +128,7 @@ type PlayerInfo = (
 ) & {
   name: string;
   deck: Deck;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
 };
 
 export type PlayerId = PlayerInfo["id"];
@@ -670,32 +669,23 @@ function toShuffled<T>(array: readonly T[]): T[] {
   return result;
 }
 
-@Injectable()
 export class RoomsService {
-  private logger = new Logger(RoomsService.name);
+  private logger = console;
 
   private roomIdPool = toShuffled(Array.from({ length: 10000 }, (_, i) => i));
   private rooms = new Map<number, Room>();
   private shutdownResolvers: PromiseWithResolvers<void> | null = null;
 
-  constructor(
-    private users: UsersService,
-    private decks: DecksService,
-    private games: GamesService,
-    private metrics: MetricsService,
-  ) {
-    this.metrics.setRoomMetricsProvider(() => this.getRoomMetricsSnapshot());
-    const onShutdown = async () => {
-      console.log(`Waiting for ${this.rooms.size} rooms to stop...`);
-      if (!this.shutdownResolvers && this.rooms.size !== 0) {
-        this.shutdownResolvers = Promise.withResolvers();
-      }
-      await this.shutdownResolvers?.promise;
-      process.exit();
-    };
-    process.on("SIGINT", onShutdown);
-    process.on("SIGTERM", onShutdown);
-    process.on("SIGQUIT", onShutdown);
+  onModuleInit() {
+    metricsService.setRoomMetricsProvider(() => this.getRoomMetricsSnapshot());
+  }
+
+  async waitForShutdown() {
+    console.log(`Waiting for ${this.rooms.size} rooms to stop...`);
+    if (!this.shutdownResolvers && this.rooms.size !== 0) {
+      this.shutdownResolvers = Promise.withResolvers();
+    }
+    await this.shutdownResolvers?.promise;
   }
 
   currentRoom(playerId: PlayerId) {
@@ -744,14 +734,14 @@ export class RoomsService {
   }
 
   async createRoomFromUser(userId: number, params: UserCreateRoomDto) {
-    const user = await this.users.findById(userId);
+    const user = await usersService.findById(userId);
     if (user === null) {
       throw new NotFoundException(`User ${userId} not found`);
     }
     if (this.currentRoom(userId) !== null) {
       throw new ConflictException(`User ${userId} is already in a room`);
     }
-    const deck = await this.decks.getDeck(userId, params.hostDeckId);
+    const deck = await decksService.getDeck(userId, params.hostDeckId);
     if (deck === null) {
       throw new NotFoundException(`Deck ${params.hostDeckId} not found`);
     }
@@ -836,12 +826,12 @@ export class RoomsService {
     const room = new Room(roomId, roomConfig);
     this.rooms.set(roomId, room);
     this.roomIdPool.shift();
-    this.metrics.incrementCreatedRooms();
+    metricsService.incrementCreatedRooms();
     this.logger.log(`Room ${room.id} created, host is ${playerInfo.name}`);
 
     room.onStop(async (room, game) => {
       if (game) {
-        this.metrics.incrementFinishedRooms();
+        metricsService.incrementFinishedRooms();
       }
       let deploying = (await redis?.get("meta:deploying")) ?? null;
 
@@ -894,11 +884,11 @@ export class RoomsService {
   }
 
   async joinRoomFromUser(userId: number, roomId: number, deckId: number) {
-    const user = await this.users.findById(userId);
+    const user = await usersService.findById(userId);
     if (user === null) {
       throw new NotFoundException(`User ${userId} not found`);
     }
-    const deck = await this.decks.getDeck(userId, deckId);
+    const deck = await decksService.getDeck(userId, deckId);
     if (deck === null) {
       throw new NotFoundException(`Deck ${deckId} not found`);
     }
@@ -990,7 +980,7 @@ export class RoomsService {
       ) as number[];
       const winnerWho = game.state.winner;
       const winnerId = winnerWho === null ? null : playerIds[winnerWho]!;
-      this.games
+      gamesService
         .addGame({
           coreVersion: Room.CORE_VERSION,
           gameVersion: room.config.gameVersion,
@@ -1021,7 +1011,7 @@ export class RoomsService {
         `Failed to update meta:active_rooms for room ${room.id}: ${e}`,
       );
     }
-    this.metrics.incrementStartedRooms();
+    metricsService.incrementStartedRooms();
   }
 
   getRoom(roomId: number): RoomInfo {

@@ -13,44 +13,53 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import { NestFactory } from "@nestjs/core";
-import {
-  FastifyAdapter,
-  type NestFastifyApplication,
-} from "@nestjs/platform-fastify";
-import { AppModule } from "./app.module";
-import { RequestMethod, ValidationPipe } from "@nestjs/common";
-import { DatabaseExceptionFilter } from "./db/database-exception.filter";
-import { WEB_CLIENT_BASE_PATH } from "@gi-tcg/config";
-import { frontend } from "./frontend";
+import console from "node:console";
+import { serve } from "@hono/node-server";
+import { root } from "./app.module";
+import { initializeServices, roomsService } from "./services";
+import type { AddressInfo } from "node:net";
 
-const app = await NestFactory.create<NestFastifyApplication>(
-  AppModule,
-  new FastifyAdapter({
-    // http2: true,
-    keepAliveTimeout: 65000, // 65 seconds (should be longer than ping interval)
-    requestTimeout: 0, // Disable request timeout for SSE
-  }),
-);
-app.enableShutdownHooks();
-app.useGlobalPipes(new ValidationPipe({ transform: true }));
-app.useGlobalFilters(new DatabaseExceptionFilter(app.getHttpAdapter()));
-app.setGlobalPrefix(`${WEB_CLIENT_BASE_PATH}api`, {
-  exclude: [{ path: "metrics", method: RequestMethod.GET }],
-});
-await app.register(frontend);
-
-if (process.env.NODE_ENV !== "production") {
-  app.enableCors({
-    origin: "*",
-    methods: ["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"],
-  });
+export async function startServer() {
+  await using disposeStack = await initializeServices();
+  const { promise, resolve, reject } = Promise.withResolvers<AddressInfo>();
+  const server = serve(
+    {
+      fetch: root.fetch,
+      port: Number(process.env.PORT ?? 3000),
+      hostname: "::",
+      serverOptions: {
+        keepAliveTimeout: 65000,
+        requestTimeout: 0,
+      },
+    },
+    resolve,
+  );
+  server.once("error", reject);
+  const { address, port } = await promise;
+  server.off("error", reject);
+  disposeStack.use(server);
+  disposeStack.defer(() => roomsService.waitForShutdown());
+  console.log(`Server listening at http://[${address}]:${port}`);
+  return disposeStack.move();
 }
 
-await app.listen(process.env.PORT ?? 3000, "::", (err, address) => {
-  if (err) {
-    console.error(err);
-    process.exit(1);
-  }
-  console.log(`Server listening at ${address}`);
-});
+if (import.meta.main) {
+  const disposeStack = await startServer();
+  let stopping = false;
+  const onShutdown = () => {
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    void disposeStack.disposeAsync().then(
+      () => process.exit(0),
+      (error) => {
+        console.error(error);
+        process.exit(1);
+      },
+    );
+  };
+  process.on("SIGINT", onShutdown);
+  process.on("SIGTERM", onShutdown);
+  process.on("SIGQUIT", onShutdown);
+}

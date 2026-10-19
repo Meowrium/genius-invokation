@@ -19,6 +19,6 @@ import { register } from "node:module";
 register("ts-node/esm", import.meta.url);
 
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught exception:", err);
+  console?.error?.("Uncaught exception:", err);
   process.exit(1);
 });

@@ -13,13 +13,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import {
-  Injectable,
-  NotFoundException,
-  Logger,
-  type OnModuleInit,
-} from "@nestjs/common";
-import { DbService } from "../db/db.service";
+import console from "node:console";
+import { dbService } from "../services";
+import { NotFoundException } from "../errors";
 import { eq } from "drizzle-orm";
 import { users } from "../db/schema";
 import axios from "axios";
@@ -34,16 +30,11 @@ export interface UserInfo {
   chessboardColor?: string | null;
 }
 
-@Injectable()
-export class UsersService implements OnModuleInit {
-  constructor(private database: DbService) {}
-
-  private logger = new Logger(UsersService.name);
-
-  async onModuleInit() {}
+export class UsersService {
+  private logger = console;
 
   async findById(id: number): Promise<UserInfo | null> {
-    const [user] = await this.database.db
+    const [user] = await dbService.db
       .select()
       .from(users)
       .where(eq(users.id, id))
@@ -75,7 +66,7 @@ export class UsersService implements OnModuleInit {
   }
 
   async create(id: number, ghToken: string) {
-    await this.database.db
+    await dbService.db
       .insert(users)
       .values({ id, ghToken })
       .onConflictDoUpdate({ target: users.id, set: { ghToken } });
@@ -83,7 +74,7 @@ export class UsersService implements OnModuleInit {
 
   async updateUserInfo(id: number, dto: UpdateUserInfoDto) {
     if (dto.name === undefined && dto.chessboardColor === undefined) {
-      const [user] = await this.database.db
+      const [user] = await dbService.db
         .select({ id: users.id })
         .from(users)
         .where(eq(users.id, id));
@@ -92,7 +83,7 @@ export class UsersService implements OnModuleInit {
       }
       return;
     }
-    const [user] = await this.database.db
+    const [user] = await dbService.db
       .update(users)
       .set(dto)
       .where(eq(users.id, id))

@@ -13,11 +13,4 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import { Module } from "@nestjs/common";
-import { DbService } from "./db.service";
-
-@Module({
-  providers: [DbService],
-  exports: [DbService],
-})
-export class DbModule {}
+export { DbService } from "./db.service";

@@ -13,9 +13,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import { Injectable, Logger, UnauthorizedException } from "@nestjs/common";
-import { UsersService } from "../users/users.service";
-import { JwtService } from "@nestjs/jwt";
+import console from "node:console";
+import { usersService } from "../services";
+import { UnauthorizedException } from "../errors";
+import { sign } from "hono/jwt";
 import axios from "axios";
 
 export const CODE_EXCHANGE_URL =
@@ -24,13 +25,17 @@ export const CODE_EXCHANGE_URL =
 export const GET_USER_API_URL =
   process.env.GH_GET_USER_API_URL || `https://api.github.com/user`;
 
-@Injectable()
 export class AuthService {
-  constructor(
-    private users: UsersService,
-    private jwtService: JwtService,
-  ) {}
-  private logger = new Logger(AuthService.name);
+  private logger = console;
+
+  private sign(payload: { user: number; sub: number | string }) {
+    const iat = Math.floor(Date.now() / 1000);
+    return sign(
+      { ...payload, iat, exp: iat + 42 * 24 * 60 * 60 },
+      process.env.JWT_SECRET!,
+      "HS256",
+    );
+  }
 
   private async getGitHubId(code: string) {
     const response = await axios.post(
@@ -79,15 +84,15 @@ export class AuthService {
 
   async login(code: string) {
     const { id, ghToken } = await this.getGitHubId(code);
-    await this.users.create(id, ghToken);
+    await usersService.create(id, ghToken);
     const payload = { user: 1, sub: id };
     return {
-      accessToken: await this.jwtService.signAsync(payload),
+      accessToken: await this.sign(payload),
     };
   }
 
   async signGuest(playerId: string) {
     const payload = { user: 0, sub: playerId };
-    return await this.jwtService.signAsync(payload);
+    return await this.sign(payload);
   }
 }

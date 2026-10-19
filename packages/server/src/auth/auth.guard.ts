@@ -13,65 +13,53 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import {
-  type CanActivate,
-  type ExecutionContext,
-  Injectable,
-  SetMetadata,
-  UnauthorizedException,
-} from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
-import { JwtService } from "@nestjs/jwt";
-import type { FastifyRequest } from "fastify";
+import { createMiddleware } from "hono/factory";
+import { every } from "hono/combine";
+import { ForbiddenException } from "../errors";
+import { jwt, verify } from "hono/jwt";
 import { isUserJwtPayload } from "./user.decorator";
+import type { Context } from "hono";
 
-export const IS_PUBLIC_KEY: unique symbol = Symbol("isPublic");
+const secret = process.env.JWT_SECRET;
 
-type PublicValue = true | undefined;
-
-/**
- * By default, a route can only be accessed by login users.
- * Decorate a route with `@Public()` to allow public access (un-login or guest).
- * @returns 
- */
-export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
-
-@Injectable()
-export class AuthGuard implements CanActivate {
-  constructor(
-    private jwtService: JwtService,
-    private reflector: Reflector,
-  ) {}
-
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isPublic = this.reflector.getAllAndOverride<PublicValue>(
-      IS_PUBLIC_KEY,
-      [context.getHandler(), context.getClass()],
-    ) || false;
-
-    const request = context.switchToHttp().getRequest();
-    request.auth = null;
-    
-    const token = this.extractTokenFromHeader(request);
-    if (!token) {
-      return isPublic;
-    }
-    try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_SECRET,
-      });
-      request.auth = payload;
-      if (isUserJwtPayload(payload)) {
-        return true;
-      }
-      return isPublic;
-    } catch {
-      return isPublic;
-    }
-  }
-
-  private extractTokenFromHeader(request: FastifyRequest): string | undefined {
-    const [type, token] = request.headers.authorization?.split(" ") ?? [];
-    return type === "Bearer" ? token : undefined;
-  }
+if (!secret) {
+  throw new Error("JWT_SECRET environment variable is not set.");
 }
+
+const alg = "HS256";
+const options = {
+  iat: false,
+} as const;
+
+const jwtMiddleware = jwt({
+  secret,
+  alg: "HS256",
+  verification: options,
+});
+
+export const getJwtPayload = async (ctx: Context) => {
+  const payload = ctx.get("jwtPayload");
+  if (payload) {
+    return payload;
+  }
+  const authHeader = ctx.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  const token = authHeader.substring(7);
+  try {
+    return await verify(token, secret, { ...options, alg });
+  } catch (error) {
+    return null;
+  }
+};
+
+const verifyJwtPayload = createMiddleware(async (ctx, next) => {
+  const jwtPayload = await getJwtPayload(ctx);
+  if (!jwtPayload || !isUserJwtPayload(jwtPayload)) {
+    throw new ForbiddenException();
+  }
+  await next();
+});
+
+export const AuthGuard = every(jwtMiddleware, verifyJwtPayload);
