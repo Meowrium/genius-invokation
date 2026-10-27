@@ -76,7 +76,7 @@ export function App() {
           const contents = event.target?.result as string;
           try {
             const logs = JSON.parse(contents);
-            const version = logs.gv;
+            const version = logs.gv?.replace(/^official\//, "");
             resolve(deserializeGameStateLog(getData(version), logs));
           } catch (error) {
             reject(error);
@@ -271,10 +271,7 @@ export function App() {
               </a>
             </li>
             <li>
-              <a
-                href="https://gi-tcg.taim.site"
-                target="_blank"
-              >
+              <a href="https://gi-tcg.taim.site" target="_blank">
                 Taimevraiment 七圣召唤模拟器
               </a>
               （

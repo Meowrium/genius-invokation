@@ -8,7 +8,7 @@ import { describe, expect, test, vi } from "vitest";
 import { CustomDataLoader } from "../src";
 
 const customGts = `
-import { DamageType, DiceType } from "@gi-tcg/core/data";
+import { DamageType, DiceType } from "#custom-data-loader";
 
 define attachment {
   name "Shield" as Shield;
@@ -54,7 +54,7 @@ define card {
 `;
 
 const overrideGts = `
-import { DamageType, DiceType } from "@gi-tcg/core/data";
+import { DamageType, DiceType } from "#custom-data-loader";
 
 define status {
   id 100 as ResistantFormOverride;
@@ -174,6 +174,7 @@ describe("CustomDataLoader GTS", () => {
     const roundTrippedOptions = JSON.parse(
       JSON.stringify(amOptions),
     ) as Partial<AssetsManagerOption>;
+    expect(roundTrippedOptions.officialDeckCompatible).toBe(false);
     const assets = new AssetsManager(roundTrippedOptions);
 
     expect(assets.getNameSync(10_000_000)).toBe("Shield");

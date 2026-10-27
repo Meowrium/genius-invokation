@@ -1,0 +1,154 @@
+// Copyright (C) 2026 Piovium Labs
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import { readFile } from "node:fs/promises";
+import { extname, isAbsolute } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createJiti } from "jiti";
+import { parse as parseYaml } from "yaml";
+import JSON5 from "json5";
+import { parse as parseToml } from "smol-toml";
+import type { z } from "zod";
+
+export interface LoadedReference<T = unknown> {
+  value: T;
+  source: URL;
+}
+const isRemote = (url: URL) =>
+  url.protocol === "https:" || url.protocol === "http:";
+
+const hasProtocol = (reference: string) =>
+  /^[a-z][a-z\d+.-]*:/i.test(reference);
+
+const isRelativePath = (reference: string) => /^\.{1,2}[\\/]/.test(reference);
+
+export function resolveReference(reference: string, parent: URL): URL {
+  if (isRemote(parent)) {
+    return resolveRemoteReference(reference, parent);
+  }
+
+  let url: URL;
+  if (isAbsolute(reference)) {
+    url = pathToFileURL(reference);
+  } else if (hasProtocol(reference)) {
+    url = new URL(reference);
+  } else if (isRelativePath(reference)) {
+    url = new URL(reference.replaceAll("\\", "/"), parent);
+  } else {
+    // package name
+    url = new URL(import.meta.resolve(reference, parent.href));
+  }
+  if (url.protocol === "file:") {
+    // normalize
+    return pathToFileURL(fileURLToPath(url));
+  }
+  if (!isRemote(url)) {
+    throw new Error(`Unsupported configuration protocol: ${url.protocol}`);
+  }
+  return url;
+}
+
+function resolveRemoteReference(reference: string, parent: URL): URL {
+  let url: URL;
+  if (reference.startsWith("/")) {
+    url = new URL(reference, parent);
+  } else if (isAbsolute(reference)) {
+    throw new Error("Remote configuration cannot reference local files");
+  } else if (hasProtocol(reference)) {
+    url = new URL(reference);
+  } else if (isRelativePath(reference)) {
+    url = new URL(reference.replaceAll("\\", "/"), parent);
+  } else {
+    // package name
+    throw new Error("Remote configuration cannot resolve local packages");
+  }
+  if (!isRemote(url)) {
+    throw new Error(
+      `Unsupported remote configuration protocol: ${url.protocol}`,
+    );
+  }
+  return url;
+}
+
+async function loadExternalReference(
+  reference: string,
+  parent: URL,
+): Promise<LoadedReference> {
+  let source = resolveReference(reference, parent);
+  const extension = extname(source.pathname).toLowerCase();
+  if (/^\.[cm]?[jt]s$/.test(extension)) {
+    if (isRemote(source)) {
+      throw new Error("Remote executable configuration is not supported");
+    }
+    const jiti = createJiti(parent.href);
+    let value = await jiti.import(fileURLToPath(source), { default: true });
+    if (typeof value === "function") {
+      value = await value();
+    }
+    return { value, source };
+  }
+  let text: string;
+  if (isRemote(source)) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`Cannot load ${source}: HTTP ${response.status}`);
+    }
+    source = new URL(response.url);
+    text = await response.text();
+  } else {
+    text = await readFile(source, "utf8");
+  }
+  let value: unknown;
+  switch (extension) {
+    case ".json":
+    case ".jsonc":
+    case ".json5":
+      value = JSON5.parse(text);
+      break;
+    case ".yaml":
+    case ".yml":
+      value = parseYaml(text);
+      break;
+    case ".toml":
+      value = parseToml(text);
+      break;
+    case ".gts":
+      value = { fileUri: source.href, content: text };
+      break;
+    default:
+      throw new Error(`Unsupported configuration format: ${source}`);
+  }
+  return { value, source };
+}
+
+export async function loadReference<T>(
+  entry: unknown,
+  parent: URL,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  inlineSchema = schema,
+): Promise<LoadedReference<T>> {
+  if (typeof entry === "string") {
+    const { value, source } = await loadExternalReference(entry, parent);
+    return {
+      value: schema.parse(value),
+      source,
+    };
+  } else {
+    return {
+      value: inlineSchema.parse(entry),
+      source: parent,
+    };
+  }
+}
